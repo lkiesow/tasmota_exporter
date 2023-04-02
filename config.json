@@ -1,0 +1,7 @@
+{
+	"metrics-file": "/srv/www/metrics/tasmota",
+	"devices": {
+		"plug-01.example.home": "<password>",
+		"plug-02.example.home": "<password>"
+	}
+}

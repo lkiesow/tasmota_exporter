@@ -1,0 +1,8 @@
+[Unit]
+Description=Read and publish Tasmota data
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/tasmota_exporter/
+ExecStart=/opt/tasmota_exporter/tasmota_exporter
+RuntimeMaxSec=60

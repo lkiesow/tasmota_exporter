@@ -1,0 +1,106 @@
+#!/usr/bin/env python3
+
+import json
+import time
+import urllib3
+
+from json.decoder import JSONDecodeError
+from urllib3.exceptions import MaxRetryError
+
+
+# From https://tasmota.github.io/docs/devices/Sonoff-Pow/#telemetry
+mappings = {
+        'Total': {
+            'help': 'Total Energy usage including Today',
+            'type': 'counter',
+            'unit': 'kWh'
+            },
+        'Yesterday': {
+            'help': 'Total Energy usage between 00:00 and 24:00 yesterday',
+            'type': 'gauge',
+            'unit': 'kWh'
+            },
+        'Today': {
+            'help': 'Total Energy usage today from 00:00 until now',
+            'type': 'gauge',
+            'unit': 'kWh'
+            },
+        'Power': {
+            'help': 'Current effective power load',
+            'type': 'gauge',
+            'unit': 'W'
+            },
+        'ApparentPower': {
+            'help': 'Power load on cable = sqrt(Power^2 + ReactivePower^2)',
+            'type': 'gauge',
+            'unit': 'W'
+            },
+        'ReactivePower': {
+            'help': 'Reactive load',
+            'type': 'gauge',
+            'unit': 'W'
+            },
+        'Factor': {
+            'help': 'The ratio of the real power flowing to the load to the '
+                    'apparent power in the circuit',
+            'type': 'gauge',
+            },
+        'Voltage': {
+            'help': 'Current line voltage',
+            'type': 'gauge',
+            'unit': 'V'
+            },
+        'Current': {
+            'help': 'Current line current',
+            'type': 'gauge',
+            'unit': 'A'
+            },
+        }
+
+
+def load_config():
+    with open('config.json', 'r') as f:
+        return json.load(f)
+
+
+def main():
+    data = {}
+    config = load_config()
+
+    http = urllib3.PoolManager()
+    for host, password in config['devices'].items():
+        try:
+            print(f'Requesting data from {host}')
+            request = http.request(
+                    'GET',
+                    f'http://{host}/cm',
+                    fields={
+                        'cmnd': 'STATUS+8',
+                        'user': 'admin',
+                        'password': password
+                        })
+            device_data = json.loads(request.data.decode('utf-8'))\
+                .get('StatusSNS', {})\
+                .get('ENERGY')
+            if device_data:
+                data[host] = device_data
+        except (MaxRetryError, JSONDecodeError) as e:
+            print(f'ERROR: Failed connecting to {host}:', e)
+            pass
+
+    with open(config['metrics-file'], 'w') as f:
+        f.write('# HELP last_updated Time of the last update\n')
+        f.write('# TYPE last_updated counter\n')
+        f.write('last_updated{} ' + str(time.time()) + '\n')
+
+        for key, mapping in mappings.items():
+            name = key.lower()
+            f.write(f'# HELP tasmota_{name} {mapping["help"]}\n')
+            f.write(f'# TYPE tasmota_{name} {mapping["type"]}\n')
+            for host, energy in data.items():
+                unit = f'unit="{mapping["unit"]}",' if mapping.get('unit') else ''
+                f.write(f'tasmota_{name}{{host="{host}",{unit}}} {str(energy[key])}\n')
+
+
+if __name__ == '__main__':
+    main()
